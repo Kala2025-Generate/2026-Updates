@@ -338,8 +338,7 @@ def render_fragment_library() -> None:
                 unsafe_allow_html=True,
             )
         with c_btn:
-            already_added = any(f["name"] == name for f in st.session_state.selected_fragments)
-            if st.button("➕", key=f"add_{idx}", help="Add to builder", disabled=already_added):
+            if st.button("➕", key=f"add_{idx}", help="Add to builder"):
                 st.session_state.selected_fragments.append(
                     {"name": name, "sequence": seq, "length": length}
                 )
@@ -357,7 +356,6 @@ def render_construct_builder() -> None:
 
     frags: List[dict] = st.session_state.selected_fragments
 
-    st.markdown('<div class="construct-drop-zone">', unsafe_allow_html=True)
     if not frags:
         st.info("Add fragments from the library on the left.")
     else:
@@ -377,7 +375,74 @@ def render_construct_builder() -> None:
             if c4.button("🗑️", key=f"rm_{i}", help="Remove"):
                 frags.pop(i)
                 st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ── Live concatenated sequence preview ───────────────────────────────────
+    st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
+    if frags:
+        cat_seq = "".join(f["sequence"] for f in frags)
+        st.markdown(
+            f'<div class="status-bar">⛓️ <strong>{len(frags)} fragment(s) &nbsp;·&nbsp; '
+            f'{len(cat_seq)} aa total</strong></div>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("**🧬 Annotated Concatenated Sequence**")
+
+        # Colour palette — cycles if more than 8 fragments
+        PALETTE = [
+            ("#1565C0", "#E3F2FD"),  # blue
+            ("#B71C1C", "#FFEBEE"),  # red
+            ("#1B5E20", "#E8F5E9"),  # green
+            ("#E65100", "#FFF3E0"),  # orange
+            ("#4A148C", "#F3E5F5"),  # purple
+            ("#006064", "#E0F7FA"),  # teal
+            ("#F57F17", "#FFFDE7"),  # yellow
+            ("#37474F", "#ECEFF1"),  # grey
+        ]
+
+        # Build annotated HTML blocks (one per fragment)
+        label_row = ""
+        seq_row = ""
+        for i, frag in enumerate(frags):
+            fg, bg = PALETTE[i % len(PALETTE)]
+            name_escaped = frag["name"].replace("<", "&lt;").replace(">", "&gt;")
+            seq_escaped = frag["sequence"].replace("<", "&lt;").replace(">", "&gt;")
+            label_row += (
+                f'<span style="display:inline-block;min-width:{len(frag["sequence"])}ch;'
+                f'background:{bg};color:{fg};font-weight:600;font-size:0.72rem;'
+                f'padding:1px 3px;border-radius:3px 3px 0 0;white-space:nowrap;'
+                f'overflow:hidden;text-overflow:ellipsis;max-width:{len(frag["sequence"])}ch;" '
+                f'title="{name_escaped}">{name_escaped}</span>'
+            )
+            seq_row += (
+                f'<span style="color:{fg};background:{bg};letter-spacing:0.02em;" '
+                f'title="{name_escaped}: {seq_escaped}">{seq_escaped}</span>'
+            )
+
+        annotated_html = f"""
+        <div style="font-family:'Courier New',monospace;font-size:0.82rem;
+                    background:#f5f5f5;border:1px solid #e0e0e0;border-radius:6px;
+                    padding:0.75rem;overflow-x:auto;white-space:nowrap;">
+            <div style="margin-bottom:2px;line-height:1.4;">{label_row}</div>
+            <div style="word-break:break-all;white-space:normal;line-height:1.8;">{seq_row}</div>
+        </div>
+        """
+        st.markdown(annotated_html, unsafe_allow_html=True)
+
+        # Plain copyable version
+        with st.expander("📋 Copy plain sequence", expanded=False):
+            st.code(cat_seq, language=None)
+
+        if st.checkbox("Show composition analysis", key="comp_analysis"):
+            stats = _sequence_stats(cat_seq)
+            pi_val = _estimate_pi(cat_seq)
+            st.markdown('<div class="stats-box">', unsafe_allow_html=True)
+            st.write(f"**Length:** {stats['length']} aa &nbsp;|&nbsp; **Estimated pI:** {pi_val}")
+            if "composition" in stats:
+                comp_str = " · ".join(
+                    f"{aa}: {pct}%" for aa, pct in sorted(stats["composition"].items())
+                )
+                st.caption(comp_str)
+            st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown('<div class="section-divider"></div>', unsafe_allow_html=True)
     b1, b2, b3 = st.columns(3)
@@ -417,33 +482,6 @@ def _save_construct() -> None:
 
 def render_output_panel() -> None:
     st.header("📊 Output & Export")
-    frags: List[dict] = st.session_state.selected_fragments
-
-    # ── Live preview ──────────────────────────────────────────────────────────
-    if frags:
-        cat_seq = "".join(f["sequence"] for f in frags)
-        st.markdown(
-            f'<div class="status-bar">⛓️ <strong>{len(frags)} fragment(s) &nbsp;·&nbsp; '
-            f'{len(cat_seq)} aa total</strong></div>',
-            unsafe_allow_html=True,
-        )
-        st.subheader("🧬 Concatenated Sequence")
-        st.markdown(f'<div class="sequence-mono">{cat_seq}</div>', unsafe_allow_html=True)
-        st.code(cat_seq, language=None)
-
-        if st.checkbox("Show composition analysis"):
-            stats = _sequence_stats(cat_seq)
-            pi_val = _estimate_pi(cat_seq)
-            st.markdown('<div class="stats-box">', unsafe_allow_html=True)
-            st.write(f"**Length:** {stats['length']} aa &nbsp;|&nbsp; **Estimated pI:** {pi_val}")
-            if "composition" in stats:
-                comp_str = " · ".join(
-                    f"{aa}: {pct}%" for aa, pct in sorted(stats["composition"].items())
-                )
-                st.caption(comp_str)
-            st.markdown("</div>", unsafe_allow_html=True)
-    else:
-        st.info("Add fragments to the builder to see a live preview here.")
 
     # ── Saved constructs ──────────────────────────────────────────────────────
     saved: List[dict] = st.session_state.saved_constructs
@@ -460,6 +498,7 @@ def render_output_panel() -> None:
 
     # ── Export ────────────────────────────────────────────────────────────────
     st.subheader("📥 Export")
+    frags: List[dict] = st.session_state.selected_fragments
     inc_current = st.checkbox("Include current (unsaved) construct", value=True)
     inc_components = st.checkbox("Also export component mapping CSV", value=False)
 
